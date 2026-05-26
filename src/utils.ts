@@ -146,9 +146,20 @@ const KEYWORD_MAP: { regex: RegExp; zh: string; en: string; poemZh: string; poem
   { regex: /book|paper|document/i, zh: '书卷', en: 'Scroll', poemZh: '万卷书成对青灯', poemEn: 'A beautiful scroll read beside quiet lanterns.' }
 ];
 
-export function translateAndFormatLabel(labelsString: string): PredictionLabel {
+export function translateAndFormatLabel(labelsString: string, presetFields?: { zh?: string; en?: string; poemZh?: string; poemEn?: string }): PredictionLabel {
   const parts = labelsString.split(',').map(s => s.trim());
   const mainEng = parts[0] || 'Subject';
+
+  // If Gemini or backend API already populated highly precise and beautiful custom translations & poems, prioritize them
+  if (presetFields && presetFields.zh && presetFields.poemZh) {
+    return {
+      original: mainEng,
+      zh: presetFields.zh,
+      en: presetFields.en || mainEng,
+      poemZh: presetFields.poemZh,
+      poemEn: presetFields.poemEn || ''
+    };
+  }
 
   // Substring Match in dictionary
   for (const item of KEYWORD_MAP) {

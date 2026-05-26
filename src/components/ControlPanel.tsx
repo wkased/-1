@@ -58,6 +58,7 @@ export default function ControlPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bgrEnabled, setBgrEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
+  const [editElement, setEditElement] = useState<'image' | 'title' | 'faceValue' | 'country' | 'code'>('image');
 
   // Trigger values for predefined codes and face values depending on language
   const faceValues = config.lang === 'zh' 
@@ -486,6 +487,40 @@ export default function ControlPanel({
             />
           </div>
 
+          {/* Traditional Aesthetic Presets Grid */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-zinc-400 font-bold tracking-wider uppercase">国风诗画主题选择 / Aesthetic Presets Grid</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-24 overflow-y-auto p-1.5 rounded-lg bg-zinc-900/40 border border-zinc-800/85">
+              {[
+                { label: '狸奴 (猫咪)', title: '狸奴', poem: '竹阴闲看狸奴戏' },
+                { label: '山君 (猛虎)', title: '山君', poem: '虎啸春风百兽低' },
+                { label: '瑞鹿 (神鹿)', title: '瑞鹿', poem: '呦呦鹿鸣食野之苹' },
+                { label: '青峦 (黛山)', title: '青峦', poem: '黛山千叠云万重' },
+                { label: '碧川 (秀水)', title: '碧川', poem: '半江瑟瑟半江红' },
+                { label: '一叶舟 (扁舟)', title: '一叶舟', poem: '孤舟蓑笠独钓寒' },
+                { label: '雅卉 (香荷)', title: '雅卉', poem: '一枝红艳露凝香' },
+                { label: '古树 (苍松)', title: '古树', poem: '苍松挺秀立奇峰' },
+                { label: '彩云 (月夜)', title: '彩云', poem: '卧看满天星斗落' },
+                { label: '雅器 (佳酿)', title: '雅器', poem: '一盏清茶伴残书' },
+                { label: '书卷 (青灯)', title: '书卷', poem: '万卷书成对青灯' }
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => onChange({ title: preset.title, subtitle: preset.poem })}
+                  className={`text-[10.5px] py-1 px-1.5 border rounded-md text-left transition-all truncate hover:bg-zinc-800 cursor-pointer ${
+                    config.title === preset.title
+                      ? 'bg-amber-500/10 border-amber-500/50 text-amber-400 font-semibold'
+                      : 'bg-zinc-900 border-zinc-850 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title={`点击点击应用：“${preset.title} · ${preset.poem}”`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Country selector */}
           <div className="grid grid-cols-2 gap-3.5">
             <div className="space-y-1">
@@ -626,98 +661,185 @@ export default function ControlPanel({
             />
           </div>
 
-          {/* Image Transform Sliders (Only if image is uploaded) */}
-          {hasUploadedImage && (
-            <div className="space-y-3 border-t border-zinc-800/80 pt-2.5">
-              <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-                <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                主体缩放与位置微调：
-              </span>
+          {/* Dynamic Element Position & Scale Controllers (Always accessible) */}
+          <div className="space-y-3 border-t border-zinc-800/80 pt-2.5">
+            <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
+              <Sliders className="w-3.5 h-3.5 text-amber-400" />
+              元素排版微调 (Layout Fine Tuning)：
+            </span>
 
-              <div className="space-y-2">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-zinc-300">缩放比例 (Scale):</span>
-                  <span className="font-mono text-amber-400">{Math.round(config.imageScale * 100)}%</span>
-                </div>
-                <input 
-                  type="range"
-                  min="0.3"
-                  max="2.5"
-                  step="0.05"
-                  value={config.imageScale}
-                  onChange={(e) => onChange({ imageScale: Number(e.target.value) })}
-                  className="w-full text-amber-500 bg-zinc-800 h-1.5 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
-              </div>
-
-              {/* Position controls (Grid buttons or sliders) */}
-              <div className="space-y-2">
-                <span className="text-[11px] text-zinc-400">位置偏移 (X / Y Offset):</span>
-                <div className="flex items-center gap-4">
-                  {/* XY input fields */}
-                  <div className="grid grid-cols-2 gap-2 flex-1">
-                    <div className="flex items-center bg-zinc-950 border border-zinc-850 px-2 py-1 rounded-lg">
-                      <span className="text-zinc-500 font-semibold mr-1.5 font-mono">X:</span>
-                      <input 
-                        type="number"
-                        value={config.imageXOffset}
-                        onChange={(e) => onChange({ imageXOffset: Number(e.target.value) })}
-                        className="w-full bg-transparent border-0 p-0 text-zinc-300 font-mono text-center focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex items-center bg-zinc-950 border border-zinc-850 px-2 py-1 rounded-lg">
-                      <span className="text-zinc-500 font-semibold mr-1.5 font-mono">Y:</span>
-                      <input 
-                        type="number"
-                        value={config.imageYOffset}
-                        onChange={(e) => onChange({ imageYOffset: Number(e.target.value) })}
-                        className="w-full bg-transparent border-0 p-0 text-zinc-300 font-mono text-center focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* D-Pad Buttons */}
-                  <div className="grid grid-cols-3 gap-0.5 bg-zinc-950 p-1 border border-zinc-850 rounded-lg">
-                    <div />
-                    <button 
-                      onClick={() => onChange({ imageYOffset: config.imageYOffset - 10 })}
-                      className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
-                      title="向上移动"
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
-                    <div />
-                    <button 
-                      onClick={() => onChange({ imageXOffset: config.imageXOffset - 10 })}
-                      className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
-                      title="向左移动"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <div className="flex items-center justify-center p-1 font-semibold text-[9px] text-zinc-500">
-                      PX
-                    </div>
-                    <button 
-                      onClick={() => onChange({ imageXOffset: config.imageXOffset + 10 })}
-                      className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
-                      title="向右移动"
-                    >
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                    <div />
-                    <button 
-                      onClick={() => onChange({ imageYOffset: config.imageYOffset + 10 })}
-                      className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
-                      title="向下移动"
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </button>
-                    <div />
-                  </div>
-                </div>
-              </div>
+            {/* Selector Option Pills */}
+            <div className="grid grid-cols-5 gap-1 bg-zinc-950 p-1 border border-zinc-850 rounded-lg">
+              {[
+                { id: 'image', label: '画面', desc: '图样 / Object' },
+                { id: 'title', label: '诗文', desc: '题识 / Poetry' },
+                { id: 'faceValue', label: '面值', desc: '邮资 / Value' },
+                { id: 'country', label: '国家', desc: '名称 / Region' },
+                { id: 'code', label: '志号', desc: '年份 / Serial' }
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setEditElement(item.id as any)}
+                  className={`text-[10px] py-1 px-0.5 rounded transition-all cursor-pointer text-center text-ellipsis overflow-hidden ${
+                    editElement === item.id 
+                      ? 'bg-amber-500 text-zinc-950 font-bold' 
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                  }`}
+                  title={item.desc}
+                >
+                  <div>{item.label}</div>
+                </button>
+              ))}
             </div>
-          )}
+
+            {(() => {
+              let currentScaleValue = 1.0;
+              let currentXValue = 0;
+              let currentYValue = 0;
+              
+              const minScale = 0.3;
+              const maxScale = 3.0;
+              const stepScale = 0.05;
+
+              switch (editElement) {
+                case 'image':
+                  currentScaleValue = config.imageScale || 1.05;
+                  currentXValue = config.imageXOffset || 0;
+                  currentYValue = config.imageYOffset || 0;
+                  break;
+                case 'title':
+                  currentScaleValue = config.titleScale || 1.0;
+                  currentXValue = config.titleXOffset || 0;
+                  currentYValue = config.titleYOffset || 0;
+                  break;
+                case 'faceValue':
+                  currentScaleValue = config.faceValueScale || 1.0;
+                  currentXValue = config.faceValueXOffset || 0;
+                  currentYValue = config.faceValueYOffset || 0;
+                  break;
+                case 'country':
+                  currentScaleValue = config.countryScale || 1.0;
+                  currentXValue = config.countryXOffset || 0;
+                  currentYValue = config.countryYOffset || 0;
+                  break;
+                case 'code':
+                  currentScaleValue = config.codeScale || 1.0;
+                  currentXValue = config.codeXOffset || 0;
+                  currentYValue = config.codeYOffset || 0;
+                  break;
+              }
+
+              const handleScaleChange = (val: number) => {
+                const updates: any = {};
+                updates[`${editElement}Scale`] = val;
+                onChange(updates);
+              };
+
+              const handleXChange = (val: number) => {
+                const updates: any = {};
+                updates[`${editElement}XOffset`] = val;
+                onChange(updates);
+              };
+
+              const handleYChange = (val: number) => {
+                const updates: any = {};
+                updates[`${editElement}YOffset`] = val;
+                onChange(updates);
+              };
+
+              return (
+                <div className="space-y-3">
+                  {/* Scale range slider */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-zinc-300">缩放比例 (Scale):</span>
+                      <span className="font-mono text-amber-400">{Math.round(currentScaleValue * 100)}%</span>
+                    </div>
+                    <input 
+                      type="range"
+                      min={minScale}
+                      max={maxScale}
+                      step={stepScale}
+                      value={currentScaleValue}
+                      onChange={(e) => handleScaleChange(Number(e.target.value))}
+                      className="w-full text-amber-500 bg-zinc-800 h-1.5 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    />
+                  </div>
+
+                  {/* Position coordinates inputs */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] text-zinc-400">位置偏移 (X / Y Offset):</span>
+                    <div className="flex items-center gap-4">
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        <div className="flex items-center bg-zinc-950 border border-zinc-850 px-2 py-1 rounded-lg">
+                          <span className="text-zinc-500 font-semibold mr-1.5 font-mono">X:</span>
+                          <input 
+                            type="number"
+                            value={currentXValue}
+                            onChange={(e) => handleXChange(Number(e.target.value))}
+                            className="w-full bg-transparent border-0 p-0 text-zinc-300 font-mono text-center focus:outline-none text-[11px]"
+                          />
+                        </div>
+                        <div className="flex items-center bg-zinc-950 border border-zinc-850 px-2 py-1 rounded-lg">
+                          <span className="text-zinc-500 font-semibold mr-1.5 font-mono">Y:</span>
+                          <input 
+                            type="number"
+                            value={currentYValue}
+                            onChange={(e) => handleYChange(Number(e.target.value))}
+                            className="w-full bg-transparent border-0 p-0 text-zinc-300 font-mono text-center focus:outline-none text-[11px]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Control Panel D-Pad */}
+                      <div className="grid grid-cols-3 gap-0.5 bg-zinc-950 p-1 border border-zinc-850 rounded-lg shrink-0">
+                        <div />
+                        <button 
+                          type="button"
+                          onClick={() => handleYChange(currentYValue - 5)}
+                          className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
+                          title="向上移动"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <div />
+                        <button 
+                          type="button"
+                          onClick={() => handleXChange(currentXValue - 5)}
+                          className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
+                          title="向左移动"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="flex items-center justify-center p-1 font-semibold text-[9px] text-zinc-500 select-none">
+                          PX
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => handleXChange(currentXValue + 5)}
+                          className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
+                          title="向右移动"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                        <div />
+                        <button 
+                          type="button"
+                          onClick={() => handleYChange(currentYValue + 5)}
+                          className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
+                          title="向下移动"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <div />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
       

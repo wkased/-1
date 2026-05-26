@@ -26,7 +26,19 @@ export default function App() {
     innerBorderPadding: 16,
     imageScale: 1.05,
     imageXOffset: 0,
-    imageYOffset: 0
+    imageYOffset: 0,
+    titleXOffset: 0,
+    titleYOffset: 0,
+    titleScale: 1.0,
+    faceValueXOffset: 0,
+    faceValueYOffset: 0,
+    faceValueScale: 1.0,
+    countryXOffset: 0,
+    countryYOffset: 0,
+    countryScale: 1.0,
+    codeXOffset: 0,
+    codeYOffset: 0,
+    codeScale: 1.0
   });
 
   // Uploaded and processed Image States
@@ -75,17 +87,17 @@ export default function App() {
     });
   };
 
-  // Run AI Browser-side image classification & apply translation and poem automatically
+  // Run AI image classification & apply translation and poem automatically
   const runClassification = async (imageUrl: string) => {
     setIsClassifying(true);
     setClassificationProgress(5);
-    setClassificationMsg('正在加载浏览器本地轻量级识别模型...');
+    setClassificationMsg('正在启动智能图像识别大模型...');
     try {
       const results = await classifyStampImage(imageUrl, (pct, msg) => {
         setClassificationProgress(pct);
         setClassificationMsg(msg);
       });
-      const formatted = results.map(res => translateAndFormatLabel(res.label));
+      const formatted = results.map(res => translateAndFormatLabel(res.label, res));
       setPredictions(formatted);
 
       if (formatted.length > 0) {
@@ -262,6 +274,7 @@ export default function App() {
               useChromaKey={useChromaKey}
               chromaColor={chromaColor}
               chromaTolerance={chromaTolerance}
+              onConfigChange={handleConfigChange}
             />
           </div>
 

@@ -23,6 +23,23 @@ export interface StampConfig {
   imageScale: number;
   imageXOffset: number;
   imageYOffset: number;
+  
+  // Custom layout offsets and sizing parameters for all main elements
+  titleXOffset?: number;
+  titleYOffset?: number;
+  titleScale?: number;
+  
+  faceValueXOffset?: number;
+  faceValueYOffset?: number;
+  faceValueScale?: number;
+  
+  countryXOffset?: number;
+  countryYOffset?: number;
+  countryScale?: number;
+  
+  codeXOffset?: number;
+  codeYOffset?: number;
+  codeScale?: number;
 }
 
 export interface PoetryData {

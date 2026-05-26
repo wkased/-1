@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Download, RefreshCw, ZoomIn, Square, Grid2X2 } from 'lucide-react';
 import { StampConfig, POETRY_PRESETS } from '../types';
 import { extractColors } from '../utils';
@@ -11,6 +11,7 @@ interface StampCanvasProps {
   useChromaKey: boolean;
   chromaColor: string;
   chromaTolerance: number;
+  onConfigChange?: (updates: Partial<StampConfig>) => void;
 }
 
 export default function StampCanvas({
@@ -19,14 +20,28 @@ export default function StampCanvas({
   uploadedImage,
   useChromaKey,
   chromaColor,
-  chromaTolerance
+  chromaTolerance,
+  onConfigChange
 }: StampCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [bgrImageData, setBgrImageData] = useState<ImageData | null>(null);
   const [processedCutout, setProcessedCutout] = useState<HTMLCanvasElement | null>(null);
 
-  // We detect whether the uploaded image is wide, tall, standard vertical, or standard horizontal
+  // States for the direct visual drag-repositioning & scaling
+  const [designMode, setDesignMode] = useState(true);
+  const [activeElement, setActiveElement] = useState<'image' | 'title' | 'faceValue' | 'country' | 'code' | null>('image');
+  const [dragState, setDragState] = useState<{
+    element: 'image' | 'title' | 'faceValue' | 'country' | 'code';
+    startX: number;
+    startY: number;
+    startOffsetLimitX: number;
+    startOffsetLimitY: number;
+    type: 'move' | 'resize';
+    startScale: number;
+  } | null>(null);
+
+  // Determine logical design size
   let isWide = false;
   let isTall = false;
   let isStandardHorizontal = false;
@@ -42,9 +57,438 @@ export default function StampCanvas({
     }
   }
 
-  // Determine logical design size
   let logicalW = 420;
   let logicalH = 540; // Default Standard Vertical Stamp
+
+  if (isWide) {
+    logicalW = 660;
+    logicalH = 390;
+  } else if (isTall) {
+    logicalW = 390;
+    logicalH = 660;
+  } else if (isStandardHorizontal) {
+    logicalW = 540;
+    logicalH = 420;
+  }
+
+  // Calculate coordinates of each visual block in design pixels
+  const getElementRects = () => {
+    const margin = 24;
+    const sw = logicalW - 2 * margin;
+    const sh = logicalH - 2 * margin;
+    const padding = config.innerBorderPadding;
+
+    // Default configuration metrics safely set
+    const image_x = config.imageXOffset || 0;
+    const image_y = config.imageYOffset || 0;
+    const image_sc = config.imageScale || 1.0;
+
+    const t_x = config.titleXOffset || 0;
+    const t_y = config.titleYOffset || 0;
+    const t_sc = config.titleScale || 1.0;
+
+    const fv_x = config.faceValueXOffset || 0;
+    const fv_y = config.faceValueYOffset || 0;
+    const fv_sc = config.faceValueScale || 1.0;
+
+    const c_x = config.countryXOffset || 0;
+    const c_y = config.countryYOffset || 0;
+    const c_sc = config.countryScale || 1.0;
+
+    const cd_x = config.codeXOffset || 0;
+    const cd_y = config.codeYOffset || 0;
+    const cd_sc = config.codeScale || 1.0;
+
+    const rects: Record<string, { x: number; y: number; w: number; h: number; label: string }> = {};
+
+    // 1. Image block
+    const imgW = sw * 0.72 * image_sc;
+    const imgH = sh * 0.72 * image_sc;
+    rects.image = {
+      x: (margin + sw / 2 + image_x) - imgW / 2,
+      y: (margin + sh / 2 + image_y) - imgH / 2,
+      w: imgW,
+      h: imgH,
+      label: '图样 / Image Focus'
+    };
+
+    // 2. Title and subtitle combined block
+    if (config.style === 'style1') {
+      const w = sw * 0.52 * t_sc;
+      const h = 50 * t_sc;
+      rects.title = {
+        x: (margin + padding + 15 + t_x),
+        y: (margin + sh - padding - 64 + t_y),
+        w,
+        h,
+        label: '题识诗文 / Title & Poem'
+      };
+    } else if (config.style === 'style2') {
+      const w = sw * 0.65 * t_sc;
+      const h = 50 * t_sc;
+      rects.title = {
+        x: (margin + sw / 2 + t_x) - w / 2,
+        y: (margin + sh - padding - 74 + t_y),
+        w,
+        h,
+        label: '题识诗文 / Title & Poem'
+      };
+    } else {
+      const w = sw * 0.65 * t_sc;
+      const h = 55 * t_sc;
+      rects.title = {
+        x: (margin + sw / 2 + t_x) - w / 2,
+        y: (margin + padding + 55 + t_y),
+        w,
+        h,
+        label: '题识诗文 / Title & Poem'
+      };
+    }
+
+    // 3. Face Value (Denomination) block
+    if (config.style === 'style1') {
+      const w = 110 * fv_sc;
+      const h = 34 * fv_sc;
+      rects.faceValue = {
+        x: (margin + sw - padding - 14 + fv_x) - w,
+        y: (margin + sh - padding - 44 + fv_y),
+        w,
+        h,
+        label: '画幅面值 / Value'
+      };
+    } else if (config.style === 'style2') {
+      const w = 100 * fv_sc;
+      const h = 30 * fv_sc;
+      rects.faceValue = {
+        x: (margin + sw - padding - 15 + fv_x) - w,
+        y: (margin + padding + 10 + fv_y),
+        w,
+        h,
+        label: '画幅面值 / Value'
+      };
+    } else {
+      const w = 100 * fv_sc;
+      const h = 30 * fv_sc;
+      rects.faceValue = {
+        x: (margin + padding + 15 + fv_x),
+        y: (margin + padding + 10 + fv_y),
+        w,
+        h,
+        label: '画幅面值 / Value'
+      };
+    }
+
+    // 4. Country Label block
+    if (config.style === 'style1') {
+      const w = 38 * c_sc;
+      const h = 135 * c_sc;
+      rects.country = {
+        x: (margin + padding + 18 + c_x) - w / 2,
+        y: (margin + padding + 20 + c_y),
+        w,
+        h,
+        label: '国家名称 / Country'
+      };
+    } else if (config.style === 'style2') {
+      const w = 110 * c_sc;
+      const h = 30 * c_sc;
+      rects.country = {
+        x: (margin + padding + 15 + c_x),
+        y: (margin + padding + 10 + c_y),
+        w,
+        h,
+        label: '国家名称 / Country'
+      };
+    } else {
+      const w = 110 * c_sc;
+      const h = 30 * c_sc;
+      rects.country = {
+        x: (margin + sw - padding - 15 + c_x) - w,
+        y: (margin + sh - padding - 34 + c_y),
+        w,
+        h,
+        label: '国家名称 / Country'
+      };
+    }
+
+    // 5. Code and Year block
+    if (config.style === 'style1') {
+      const w = sw * 0.70 * cd_sc;
+      const h = 24 * cd_sc;
+      rects.code = {
+        x: (margin + sw / 2 + cd_x) - w / 2,
+        y: (margin + sh - padding + cd_y),
+        w,
+        h,
+        label: '邮资编码 / Catalog Code'
+      };
+    } else if (config.style === 'style2') {
+      const w = sw * 0.90 * cd_sc;
+      const h = 24 * cd_sc;
+      rects.code = {
+        x: (margin + sw / 2 + cd_x) - w / 2,
+        y: (margin + sh - padding + cd_y),
+        w,
+        h,
+        label: '邮资编码 / Catalog Code'
+      };
+    } else {
+      const w = 160 * cd_sc;
+      const h = 24 * cd_sc;
+      rects.code = {
+        x: (margin + padding + 15 + cd_x),
+        y: (margin + sh - padding - cd_y - 30),
+        w,
+        h,
+        label: '邮资编码 / Catalog Code'
+      };
+    }
+
+    return rects;
+  };
+
+  const handleStartDrag = (
+    e: React.MouseEvent | React.TouchEvent, 
+    element: 'image' | 'title' | 'faceValue' | 'country' | 'code',
+    type: 'move' | 'resize'
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    let startXOffset = 0;
+    let startYOffset = 0;
+    let startScaleMultiplier = 1.0;
+
+    switch (element) {
+      case 'image':
+        startXOffset = config.imageXOffset || 0;
+        startYOffset = config.imageYOffset || 0;
+        startScaleMultiplier = config.imageScale || 1.0;
+        break;
+      case 'title':
+        startXOffset = config.titleXOffset || 0;
+        startYOffset = config.titleYOffset || 0;
+        startScaleMultiplier = config.titleScale || 1.0;
+        break;
+      case 'faceValue':
+        startXOffset = config.faceValueXOffset || 0;
+        startYOffset = config.faceValueYOffset || 0;
+        startScaleMultiplier = config.faceValueScale || 1.0;
+        break;
+      case 'country':
+        startXOffset = config.countryXOffset || 0;
+        startYOffset = config.countryYOffset || 0;
+        startScaleMultiplier = config.countryScale || 1.0;
+        break;
+      case 'code':
+        startXOffset = config.codeXOffset || 0;
+        startYOffset = config.codeYOffset || 0;
+        startScaleMultiplier = config.codeScale || 1.0;
+        break;
+    }
+
+    setDragState({
+      element,
+      startX: clientX,
+      startY: clientY,
+      startOffsetLimitX: startXOffset,
+      startOffsetLimitY: startYOffset,
+      type,
+      startScale: startScaleMultiplier
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragState.startX;
+      const deltaY = e.clientY - dragState.startY;
+
+      const container = containerRef.current;
+      if (!container) return;
+      const canvasEl = canvasRef.current;
+      if (!canvasEl) return;
+      
+      const designToPixelRatio = logicalW / canvasEl.clientWidth;
+      const deltaDesignX = deltaX * designToPixelRatio;
+      const deltaDesignY = deltaY * designToPixelRatio;
+
+      if (dragState.type === 'move') {
+        const updates: Partial<StampConfig> = {};
+        const newX = Math.round(dragState.startOffsetLimitX + deltaDesignX);
+        const newY = Math.round(dragState.startOffsetLimitY + deltaDesignY);
+
+        switch (dragState.element) {
+          case 'image':
+            updates.imageXOffset = newX;
+            updates.imageYOffset = newY;
+            break;
+          case 'title':
+            updates.titleXOffset = newX;
+            updates.titleYOffset = newY;
+            break;
+          case 'faceValue':
+            updates.faceValueXOffset = newX;
+            updates.faceValueYOffset = newY;
+            break;
+          case 'country':
+            updates.countryXOffset = newX;
+            updates.countryYOffset = newY;
+            break;
+          case 'code':
+            updates.codeXOffset = newX;
+            updates.codeYOffset = newY;
+            break;
+        }
+        if (onConfigChange) {
+          onConfigChange(updates);
+        }
+      } else {
+        const horizontalFactor = deltaDesignX / 200;
+        const verticalFactor = deltaDesignY / 200;
+        const overallDelta = Math.abs(deltaDesignX) > Math.abs(deltaDesignY) ? horizontalFactor : verticalFactor;
+        
+        const newScale = parseFloat(Math.max(0.1, Math.min(5.0, dragState.startScale + overallDelta)).toFixed(2));
+        
+        const updates: Partial<StampConfig> = {};
+        switch (dragState.element) {
+          case 'image':
+            updates.imageScale = newScale;
+            break;
+          case 'title':
+            updates.titleScale = newScale;
+            break;
+          case 'faceValue':
+            updates.faceValueScale = newScale;
+            break;
+          case 'country':
+            updates.countryScale = newScale;
+            break;
+          case 'code':
+            updates.codeScale = newScale;
+            break;
+        }
+        if (onConfigChange) {
+          onConfigChange(updates);
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDragState(null);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - dragState.startX;
+      const deltaY = touch.clientY - dragState.startY;
+
+      const canvasEl = canvasRef.current;
+      if (!canvasEl) return;
+      const designToPixelRatio = logicalW / canvasEl.clientWidth;
+      const deltaDesignX = deltaX * designToPixelRatio;
+      const deltaDesignY = deltaY * designToPixelRatio;
+
+      if (dragState.type === 'move') {
+        const updates: Partial<StampConfig> = {};
+        const newX = Math.round(dragState.startOffsetLimitX + deltaDesignX);
+        const newY = Math.round(dragState.startOffsetLimitY + deltaDesignY);
+
+        switch (dragState.element) {
+          case 'image':
+            updates.imageXOffset = newX;
+            updates.imageYOffset = newY;
+            break;
+          case 'title':
+            updates.titleXOffset = newX;
+            updates.titleYOffset = newY;
+            break;
+          case 'faceValue':
+            updates.faceValueXOffset = newX;
+            updates.faceValueYOffset = newY;
+            break;
+          case 'country':
+            updates.countryXOffset = newX;
+            updates.countryYOffset = newY;
+            break;
+          case 'code':
+            updates.codeXOffset = newX;
+            updates.codeYOffset = newY;
+            break;
+        }
+        if (onConfigChange) {
+          onConfigChange(updates);
+        }
+      } else {
+        const horizontalFactor = deltaDesignX / 200;
+        const verticalFactor = deltaDesignY / 200;
+        const overallDelta = Math.abs(deltaDesignX) > Math.abs(deltaDesignY) ? horizontalFactor : verticalFactor;
+        
+        const newScale = parseFloat(Math.max(0.1, Math.min(5.0, dragState.startScale + overallDelta)).toFixed(2));
+        
+        const updates: Partial<StampConfig> = {};
+        switch (dragState.element) {
+          case 'image':
+            updates.imageScale = newScale;
+            break;
+          case 'title':
+            updates.titleScale = newScale;
+            break;
+          case 'faceValue':
+            updates.faceValueScale = newScale;
+            break;
+          case 'country':
+            updates.countryScale = newScale;
+            break;
+          case 'code':
+            updates.codeScale = newScale;
+            break;
+        }
+        if (onConfigChange) {
+          onConfigChange(updates);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [dragState, logicalW, onConfigChange, config]);
+
+  const handleResetLayout = () => {
+    if (onConfigChange) {
+      onConfigChange({
+        imageScale: 1.05,
+        imageXOffset: 0,
+        imageYOffset: 0,
+        titleXOffset: 0,
+        titleYOffset: 0,
+        titleScale: 1.0,
+        faceValueXOffset: 0,
+        faceValueYOffset: 0,
+        faceValueScale: 1.0,
+        countryXOffset: 0,
+        countryYOffset: 0,
+        countryScale: 1.0,
+        codeXOffset: 0,
+        codeYOffset: 0,
+        codeScale: 1.0
+      });
+    }
+  };
 
   if (isWide) {
     logicalW = 660;
@@ -393,32 +837,34 @@ export default function StampCanvas({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      const valX = margin + padding + 18;
-      const valYStart = margin + padding + 30;
+      const cScale = config.countryScale || 1.0;
+      const valX = margin + padding + 18 + (config.countryXOffset || 0);
+      const valYStart = margin + padding + 30 + (config.countryYOffset || 0);
 
       if (config.lang === 'zh') {
         // Vertical Chinese Characters
-        setupSerifFont(16, 'bold');
+        setupSerifFont(16 * cScale, 'bold');
         const chars = countryText.split('');
-        const charSpacing = 24;
+        const charSpacing = 24 * cScale;
         chars.forEach((char, idx) => {
           ctx.fillText(char, valX, valYStart + idx * charSpacing);
         });
       } else {
         // Rotate text nicely for English
-        ctx.translate(valX, margin + padding + 60);
+        ctx.translate(valX, margin + padding + 60 + (config.countryYOffset || 0));
         ctx.rotate(-Math.PI / 2);
-        setupSansFont(12, 'bold');
+        setupSansFont(12 * cScale, 'bold');
         ctx.fillText(countryText, 0, 0);
       }
       ctx.restore();
 
       // B. Face value (Large bold bottom-right)
       ctx.save();
-      setupSerifFont(26, 'bold');
+      const fvScale = config.faceValueScale || 1.0;
+      setupSerifFont(26 * fvScale, 'bold');
       ctx.fillStyle = '#fef08a'; // beautiful stamp gold yellow
       ctx.textAlign = 'right';
-      ctx.fillText(valText, margin + sw - padding - 14, margin + sh - padding - 22);
+      ctx.fillText(valText, margin + sw - padding - 14 + (config.faceValueXOffset || 0), margin + sh - padding - 22 + (config.faceValueYOffset || 0));
       ctx.restore();
 
       // C. Title & Subtitle (Poetry) in elegant bottom/center stack
@@ -427,22 +873,25 @@ export default function StampCanvas({
       ctx.textAlign = 'left';
 
       // Title
-      setupSerifFont(22, 'bold');
-      const titleY = margin + sh - padding - 54;
-      ctx.fillText(titleText, margin + padding + 15, titleY);
+      const tScale = config.titleScale || 1.0;
+      setupSerifFont(22 * tScale, 'bold');
+      const titleX = margin + padding + 15 + (config.titleXOffset || 0);
+      const titleY = margin + sh - padding - 54 + (config.titleYOffset || 0);
+      ctx.fillText(titleText, titleX, titleY);
 
       // Subtitle
-      setupSansFont(10.5, 'normal');
+      setupSansFont(10.5 * tScale, 'normal');
       ctx.fillStyle = textMuted;
-      ctx.fillText(subText, margin + padding + 15, titleY + 22);
+      ctx.fillText(subText, titleX, titleY + 22 * tScale);
       ctx.restore();
 
       // D. Code & Year written vertically or along absolute edge
       ctx.save();
-      setupMonoFont(7.5, 'normal');
+      const cdScale = config.codeScale || 1.0;
+      setupMonoFont(7.5 * cdScale, 'normal');
       ctx.fillStyle = textExtraMuted;
       ctx.textAlign = 'center';
-      ctx.fillText(`${codeText}   [${yearText}]`, margin + sw / 2, margin + sh - padding + 8);
+      ctx.fillText(`${codeText}   [${yearText}]`, margin + sw / 2 + (config.codeXOffset || 0), margin + sh - padding + 8 + (config.codeYOffset || 0));
       ctx.restore();
     }
 
@@ -450,18 +899,20 @@ export default function StampCanvas({
     else if (config.style === 'style2') {
       // A. Country Text (Horizontal top left)
       ctx.save();
-      setupSerifFont(16, 'bold');
+      const cScale = config.countryScale || 1.0;
+      setupSerifFont(16 * cScale, 'bold');
       ctx.fillStyle = textLight;
       ctx.textAlign = 'left';
-      ctx.fillText(countryText, margin + padding + 15, margin + padding + 24);
+      ctx.fillText(countryText, margin + padding + 15 + (config.countryXOffset || 0), margin + padding + 24 + (config.countryYOffset || 0));
       ctx.restore();
 
       // B. Face Value (Horizontal top right)
       ctx.save();
-      setupSerifFont(22, 'bold');
+      const fvScale = config.faceValueScale || 1.0;
+      setupSerifFont(22 * fvScale, 'bold');
       ctx.fillStyle = '#fef08a';
       ctx.textAlign = 'right';
-      ctx.fillText(valText, margin + sw - padding - 15, margin + padding + 24);
+      ctx.fillText(valText, margin + sw - padding - 15 + (config.faceValueXOffset || 0), margin + padding + 24 + (config.faceValueYOffset || 0));
       ctx.restore();
 
       // C. Title in center, Subtitle (Poetry) stacked
@@ -470,24 +921,27 @@ export default function StampCanvas({
       ctx.textAlign = 'center';
 
       // Title
-      setupSerifFont(24, 'bold');
-      const titleY = margin + sh - padding - 64;
-      ctx.fillText(titleText, margin + sw / 2, titleY);
+      const tScale = config.titleScale || 1.0;
+      setupSerifFont(24 * tScale, 'bold');
+      const titleX = margin + sw / 2 + (config.titleXOffset || 0);
+      const titleY = margin + sh - padding - 64 + (config.titleYOffset || 0);
+      ctx.fillText(titleText, titleX, titleY);
 
       // Subtitle
-      setupSansFont(10.5, 'normal');
+      setupSansFont(10.5 * tScale, 'normal');
       ctx.fillStyle = textMuted;
-      ctx.fillText(subText, margin + sw / 2, titleY + 24);
+      ctx.fillText(subText, titleX, titleY + 24 * tScale);
       ctx.restore();
 
       // D. Stamp Code
       ctx.save();
-      setupMonoFont(7.5, 'normal');
+      const cdScale = config.codeScale || 1.0;
+      setupMonoFont(7.5 * cdScale, 'normal');
       ctx.fillStyle = textExtraMuted;
       ctx.textAlign = 'center';
-      // Put stamp coding on the right/left bottom
-      ctx.fillText(codeText, margin + padding + 30, margin + sh - padding + 8);
-      ctx.fillText(yearText, margin + sw - padding - 20, margin + sh - padding + 8);
+      const codeY = margin + sh - padding + 8 + (config.codeYOffset || 0);
+      ctx.fillText(codeText, margin + padding + 30 + (config.codeXOffset || 0), codeY);
+      ctx.fillText(yearText, margin + sw - padding - 20 + (config.codeXOffset || 0), codeY);
       ctx.restore();
     }
 
@@ -495,10 +949,11 @@ export default function StampCanvas({
     else if (config.style === 'style3') {
       // A. Face value (Top left)
       ctx.save();
-      setupSerifFont(18, 'bold');
+      const fvScale = config.faceValueScale || 1.0;
+      setupSerifFont(18 * fvScale, 'bold');
       ctx.fillStyle = '#fef08a';
       ctx.textAlign = 'left';
-      ctx.fillText(valText, margin + padding + 15, margin + padding + 24);
+      ctx.fillText(valText, margin + padding + 15 + (config.faceValueXOffset || 0), margin + padding + 24 + (config.faceValueYOffset || 0));
       ctx.restore();
 
       // B. Title & Subtitle written vertically/center on the top half
@@ -507,29 +962,34 @@ export default function StampCanvas({
       ctx.textAlign = 'center';
 
       // Title (centered top half)
-      setupSerifFont(26, 'bold');
-      ctx.fillText(titleText, margin + sw / 2, margin + padding + 60);
+      const tScale = config.titleScale || 1.0;
+      const titleX = margin + sw / 2 + (config.titleXOffset || 0);
+      const titleY = margin + padding + 60 + (config.titleYOffset || 0);
+      setupSerifFont(26 * tScale, 'bold');
+      ctx.fillText(titleText, titleX, titleY);
 
       // Subtitle
-      setupSansFont(11, 'normal');
+      setupSansFont(11 * tScale, 'normal');
       ctx.fillStyle = textMuted;
-      ctx.fillText(subText, margin + sw / 2, margin + padding + 90);
+      ctx.fillText(subText, titleX, titleY + 30 * tScale);
       ctx.restore();
 
       // C. Country name placed in a beautiful horizontal banner at the bottom aligned right
       ctx.save();
-      setupSerifFont(16, 'bold');
+      const cScale = config.countryScale || 1.0;
+      setupSerifFont(16 * cScale, 'bold');
       ctx.fillStyle = textLight;
       ctx.textAlign = 'right';
-      ctx.fillText(countryText, margin + sw - padding - 15, margin + sh - padding - 20);
+      ctx.fillText(countryText, margin + sw - padding - 15 + (config.countryXOffset || 0), margin + sh - padding - 20 + (config.countryYOffset || 0));
       ctx.restore();
 
       // D. Stamp Code and Year bottom aligned left
       ctx.save();
-      setupMonoFont(8, 'normal');
+      const cdScale = config.codeScale || 1.0;
+      setupMonoFont(8 * cdScale, 'normal');
       ctx.fillStyle = textExtraMuted;
       ctx.textAlign = 'left';
-      ctx.fillText(`C.N. ${codeText} / ${yearText}`, margin + padding + 15, margin + sh - padding - 20);
+      ctx.fillText(`C.N. ${codeText} / ${yearText}`, margin + padding + 15 + (config.codeXOffset || 0), margin + sh - padding - 20 + (config.codeYOffset || 0));
       ctx.restore();
     }
 
@@ -596,7 +1056,7 @@ export default function StampCanvas({
       <div 
         ref={containerRef} 
         id="stamp-workspace-grid" 
-        className="relative flex items-center justify-center p-6 md:p-12 border border-zinc-800 rounded-3xl bg-zinc-900 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px] shadow-inner w-full min-h-[460px]"
+        className="relative flex flex-col items-center justify-center p-6 md:p-12 border border-zinc-800 rounded-3xl bg-zinc-900 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:16px_16px] shadow-inner w-full min-h-[460px]"
       >
         {/* Transparency Alert Overlay */}
         <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 bg-zinc-950/80 border border-zinc-800/60 rounded-full text-[10px] text-zinc-400 backdrop-blur-sm select-none z-10 font-mono">
@@ -604,18 +1064,111 @@ export default function StampCanvas({
           <span>边缘已裁剪透明 / Transparency Canvas Activated</span>
         </div>
 
+        {/* Interactive Layout Designer Mode Toolbar */}
+        <div className="absolute top-3 right-3 flex items-center gap-2 select-none z-10">
+          <button
+            onClick={() => setDesignMode(!designMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-full text-[10.5px] font-semibold transition-all backdrop-blur-sm cursor-pointer ${
+              designMode
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 font-bold'
+                : 'bg-zinc-950/80 border-zinc-800 text-zinc-400 hover:text-zinc-300'
+            }`}
+          >
+            <Square className={`w-3 h-3 ${designMode ? 'fill-amber-400 font-bold text-amber-400' : ''}`} />
+            <span>{designMode ? '画布内拖动编辑 [开]' : '画布内拖动编辑 [关]'}</span>
+          </button>
+          
+          <button
+            onClick={handleResetLayout}
+            className="flex items-center gap-1 px-3 py-1.5 bg-zinc-950/80 border border-zinc-850 hover:border-zinc-700 rounded-full text-[10.5px] font-medium text-zinc-400 hover:text-zinc-200 transition-all backdrop-blur-sm cursor-pointer"
+            title="恢复排版"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>恢复默认</span>
+          </button>
+        </div>
+
         {/* Dynamic Interactive Canvas */}
-        <div className="relative group transition-all duration-300 transform scrollbar-none flex justify-center">
+        <div className="relative group transition-all duration-300 transform scrollbar-none flex justify-center w-full max-w-[420px] sm:max-w-none" style={{ maxWidth: `${logicalW}px` }}>
           <canvas
             ref={canvasRef}
             id="stamp-canvas-main"
-            className="rounded-lg shadow-2xl transition-all duration-200"
+            className={`rounded-lg shadow-2xl transition-all duration-200 ${
+              designMode ? 'ring-2 ring-amber-500/40' : ''
+            }`}
             style={{ 
               width: '100%', 
               maxWidth: `${logicalW}px`,
               aspectRatio: `${logicalW} / ${logicalH}`
             }}
           />
+
+          {/* Active Overlays for Selection Boxes */}
+          {designMode && (
+            <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden rounded-lg">
+              {Object.entries(getElementRects()).map(([key, rect]) => {
+                const isSelected = activeElement === key;
+                const elKey = key as 'image' | 'title' | 'faceValue' | 'country' | 'code';
+                
+                return (
+                  <div
+                    key={key}
+                    className={`absolute pointer-events-auto cursor-move select-none ${
+                      isSelected 
+                        ? 'border border-dashed border-amber-500 bg-amber-500/10 shadow-[0_0_10px_rgba(245,158,11,0.45)] z-30' 
+                        : 'border border-transparent hover:border-dashed hover:border-zinc-400/40 hover:bg-white/5 z-10'
+                    }`}
+                    style={{
+                      left: `${(rect.x / logicalW) * 100}%`,
+                      top: `${(rect.y / logicalH) * 100}%`,
+                      width: `${(rect.w / logicalW) * 100}%`,
+                      height: `${(rect.h / logicalH) * 100}%`,
+                    }}
+                    onMouseDown={(e) => {
+                      setActiveElement(elKey);
+                      handleStartDrag(e, elKey, 'move');
+                    }}
+                    onTouchStart={(e) => {
+                      setActiveElement(elKey);
+                      handleStartDrag(e, elKey, 'move');
+                    }}
+                  >
+                    {/* Tag label */}
+                    <div className={`absolute top-0 left-0 text-[10px] px-1.5 py-0.5 rounded-br m-0 leading-none select-none ${
+                      isSelected ? 'bg-amber-500 text-zinc-950 font-bold' : 'bg-neutral-900/95 text-zinc-400 text-[9px]'
+                    }`}>
+                      {rect.label}
+                    </div>
+
+                    {/* Scale Handles */}
+                    {isSelected && (
+                      <>
+                        <div className="absolute top-0 left-0 w-2 h-2 bg-amber-400 border border-neutral-950 -translate-x-1/2 -translate-y-1/2 rounded-full" />
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-amber-400 border border-neutral-950 translate-x-1/2 -translate-y-1/2 rounded-full" />
+                        <div className="absolute bottom-0 left-0 w-2 h-2 bg-amber-400 border border-neutral-950 -translate-x-1/2 translate-y-1/2 rounded-full" />
+                        
+                        {/* Bottom Right Resize Handle */}
+                        <div 
+                          className="absolute bottom-0 right-0 w-5 h-5 bg-amber-400 border border-neutral-950 translate-x-1/2 translate-y-1/2 rounded-full cursor-se-resize flex items-center justify-center pointer-events-auto shadow-md"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleStartDrag(e, elKey, 'resize');
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            handleStartDrag(e, elKey, 'resize');
+                          }}
+                          title="拖拽改变大小"
+                        >
+                          <ZoomIn className="w-2.5 h-2.5 text-neutral-900" style={{ strokeWidth: 3 }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
