@@ -1,0 +1,8 @@
+{
+  "name": "Remix: BrowserStamp AI",
+  "description": "Create realistic stamps locally with background removal, automatic color extraction, and poetic layouts entirely in your web browser.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
